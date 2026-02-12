@@ -1,0 +1,68 @@
+[
+  {
+    "id": "inv1",
+    "type": "restaurant",
+    "supplierName": "Mediterraneo Foods",
+    "supplierPhone": "71 200 111",
+    "invoiceNumber": "RF-2025-011",
+    "amount": 1240.5,
+    "currency": "TND",
+    "uploadDate": "2025-11-25",
+    "fileUrl": "/mock/invoices/RF-2025-011.pdf"
+  },
+  {
+    "id": "inv2",
+    "type": "restaurant",
+    "supplierName": "Prime Meats",
+    "supplierPhone": "71 200 222",
+    "invoiceNumber": "RF-2025-012",
+    "amount": 1865.75,
+    "currency": "TND",
+    "uploadDate": "2025-11-26",
+    "fileUrl": "/mock/invoices/RF-2025-012.pdf"
+  },
+  {
+    "id": "inv3",
+    "type": "restaurant",
+    "supplierName": "Bella Italia Dairy",
+    "supplierPhone": "71 200 333",
+    "invoiceNumber": "RF-2025-013",
+    "amount": 640.0,
+    "currency": "TND",
+    "uploadDate": "2025-11-27",
+    "fileUrl": "/mock/invoices/RF-2025-013.pdf"
+  },
+  {
+    "id": "inv4",
+    "type": "coffee",
+    "supplierName": "Green Hills Coffee",
+    "supplierPhone": "71 300 101",
+    "invoiceNumber": "CF-2025-021",
+    "amount": 980.25,
+    "currency": "TND",
+    "uploadDate": "2025-11-24",
+    "fileUrl": "/mock/invoices/CF-2025-021.pdf"
+  },
+  {
+    "id": "inv5",
+    "type": "coffee",
+    "supplierName": "Fresh Dairy Co.",
+    "supplierPhone": "71 300 202",
+    "invoiceNumber": "CF-2025-022",
+    "amount": 410.9,
+    "currency": "TND",
+    "uploadDate": "2025-11-26",
+    "fileUrl": "/mock/invoices/CF-2025-022.pdf"
+  },
+  {
+    "id": "inv6",
+    "type": "coffee",
+    "supplierName": "Sweet Bakes",
+    "supplierPhone": "71 300 303",
+    "invoiceNumber": "CF-2025-023",
+    "amount": 295.4,
+    "currency": "TND",
+    "uploadDate": "2025-11-27",
+    "fileUrl": "/mock/invoices/CF-2025-023.pdf"
+  }
+]

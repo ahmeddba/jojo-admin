@@ -1,0 +1,112 @@
+[
+  {
+    "id": "1",
+    "type": "restaurant",
+    "ingredient": "Tomatoes",
+    "quantity": 50,
+    "unit": "kg",
+    "pricePerUnit": 1.5,
+    "totalPrice": 75,
+    "supplierPhone": "55 500 101",
+    "status": "in-stock"
+  },
+  {
+    "id": "2",
+    "type": "restaurant",
+    "ingredient": "Mozzarella Cheese",
+    "quantity": 5,
+    "unit": "kg",
+    "pricePerUnit": 8,
+    "totalPrice": 40,
+    "supplierPhone": "55 500 102",
+    "status": "low-stock"
+  },
+  {
+    "id": "3",
+    "type": "restaurant",
+    "ingredient": "Flour",
+    "quantity": 0,
+    "unit": "kg",
+    "pricePerUnit": 0.5,
+    "totalPrice": 0,
+    "supplierPhone": "55 500 103",
+    "status": "out-of-stock"
+  },
+  {
+    "id": "4",
+    "type": "restaurant",
+    "ingredient": "Pizza Dough Balls",
+    "quantity": 18,
+    "unit": "pcs",
+    "pricePerUnit": 0.6,
+    "totalPrice": 10.8,
+    "supplierPhone": "55 500 104",
+    "status": "low-stock"
+  },
+  {
+    "id": "5",
+    "type": "restaurant",
+    "ingredient": "Steak Cuts",
+    "quantity": 25,
+    "unit": "kg",
+    "pricePerUnit": 14.5,
+    "totalPrice": 362.5,
+    "supplierPhone": "55 500 105",
+    "status": "in-stock"
+  },
+  {
+    "id": "6",
+    "type": "coffee",
+    "ingredient": "Coffee Beans",
+    "quantity": 15,
+    "unit": "kg",
+    "pricePerUnit": 9,
+    "totalPrice": 135,
+    "supplierPhone": "55 600 201",
+    "status": "in-stock"
+  },
+  {
+    "id": "7",
+    "type": "coffee",
+    "ingredient": "Whole Milk",
+    "quantity": 8,
+    "unit": "L",
+    "pricePerUnit": 1.2,
+    "totalPrice": 9.6,
+    "supplierPhone": "55 600 202",
+    "status": "low-stock"
+  },
+  {
+    "id": "8",
+    "type": "coffee",
+    "ingredient": "Oat Milk",
+    "quantity": 2,
+    "unit": "L",
+    "pricePerUnit": 1.6,
+    "totalPrice": 3.2,
+    "supplierPhone": "55 600 203",
+    "status": "low-stock"
+  },
+  {
+    "id": "9",
+    "type": "coffee",
+    "ingredient": "Croissant Dough",
+    "quantity": 0,
+    "unit": "pcs",
+    "pricePerUnit": 0.9,
+    "totalPrice": 0,
+    "supplierPhone": "55 600 204",
+    "status": "out-of-stock"
+  },
+  {
+    "id": "10",
+    "type": "coffee",
+    "ingredient": "Brown Sugar",
+    "quantity": 12,
+    "unit": "kg",
+    "pricePerUnit": 0.7,
+    "totalPrice": 8.4,
+    "supplierPhone": "55 600 205",
+    "status": "in-stock"
+  }
+]

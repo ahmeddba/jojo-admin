@@ -1,0 +1,102 @@
+[
+  {
+    "id": "m1",
+    "type": "coffee",
+    "name": "Espresso Macchiato",
+    "price": 3.5,
+    "description": "Rich espresso with a dollop of steamed milk foam.",
+    "category": "Coffee",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/4109992/pexels-photo-4109992.jpeg"
+  },
+  {
+    "id": "m2",
+    "type": "coffee",
+    "name": "Morning Boost",
+    "price": 7,
+    "description": "Any coffee with a warm croissant.",
+    "category": "Combo",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/302904/pexels-photo-302904.jpeg"
+  },
+  {
+    "id": "m3",
+    "type": "coffee",
+    "name": "Mint Mojito",
+    "price": 8,
+    "description": "A classic refreshing mocktail with mint and lime.",
+    "category": "Drink",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/5531529/pexels-photo-5531529.jpeg"
+  },
+  {
+    "id": "m4",
+    "type": "coffee",
+    "name": "Red Velvet Cake",
+    "price": 7,
+    "description": "Classic red velvet cake with cream cheese frosting.",
+    "category": "Dessert",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/4109990/pexels-photo-4109990.jpeg"
+  },
+  {
+    "id": "m5",
+    "type": "coffee",
+    "name": "Salmon Salad",
+    "price": 15.5,
+    "description": "Fresh greens topped with grilled salmon and herbs.",
+    "category": "Salad",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg"
+  },
+  {
+    "id": "m6",
+    "type": "restaurant",
+    "name": "Steak Night Special",
+    "price": 29.99,
+    "description": "Juicy grilled steak with roasted vegetables.",
+    "category": "Main Dish",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/675951/pexels-photo-675951.jpeg"
+  },
+  {
+    "id": "m7",
+    "type": "restaurant",
+    "name": "Perfect Lunch Combo",
+    "price": 15.5,
+    "description": "Burger with quinoa salad and fresh juice.",
+    "category": "Combo",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/1639562/pexels-photo-1639562.jpeg"
+  },
+  {
+    "id": "m8",
+    "type": "restaurant",
+    "name": "Pizza for Two",
+    "price": 22,
+    "description": "Any two classic pizzas to share.",
+    "category": "Main Dish",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg"
+  },
+  {
+    "id": "m9",
+    "type": "restaurant",
+    "name": "House Salad",
+    "price": 9.5,
+    "description": "Seasonal greens with olives, tomato and feta.",
+    "category": "Side",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/1640774/pexels-photo-1640774.jpeg"
+  },
+  {
+    "id": "m10",
+    "type": "restaurant",
+    "name": "Tiramisu",
+    "price": 8.5,
+    "description": "Traditional Italian tiramisu with mascarpone cream.",
+    "category": "Dessert",
+    "available": true,
+    "imageUrl": "https://images.pexels.com/photos/4110003/pexels-photo-4110003.jpeg"
+  }
+]
