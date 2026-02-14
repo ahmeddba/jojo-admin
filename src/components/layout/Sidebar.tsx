@@ -10,6 +10,7 @@ import {
   BookOpen,
   Tag,
   Receipt,
+  ScrollText,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -37,6 +38,7 @@ export const Sidebar = () => {
     { href: "/stock", label: "Inventory", icon: Boxes },
     { href: "/menu", label: "Menu Mgmt", icon: BookOpen },
     { href: "/best-deals", label: "Promotions", icon: Tag },
+    { href: "/orders", label: "Orders", icon: ScrollText },
     { href: "/caisse", label: "Financials", icon: Receipt },
   ];
 

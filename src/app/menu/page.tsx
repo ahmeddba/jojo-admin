@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/common/SearchInput";
 import { SegmentedToggle } from "@/components/common/SegmentedToggle";
-import { Pencil, Trash2, Plus, Loader2, Upload } from "lucide-react";
+import { BookOpen, Pencil, Trash2, Plus, Loader2, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { MenuRecipeDialog } from "@/components/menu/MenuRecipeDialog";
 import {
   fetchMenuItems,
   fetchMenuCategories,
@@ -52,6 +53,7 @@ export default function MenuPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [recipeItem, setRecipeItem] = useState<MenuItem | null>(null);
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | "delete" | null>(null);
 
   const supabase = createClient();
@@ -109,6 +111,10 @@ export default function MenuPage() {
   const closeDialog = () => {
     setDialogMode(null);
     setImageFile(null);
+  };
+
+  const openRecipeEditor = (item: MenuItem) => {
+    setRecipeItem(item);
   };
 
   const handleSubmit = async (values: FormValues) => {
@@ -285,6 +291,18 @@ export default function MenuPage() {
                     </span>
                     <span className={`w-2 h-2 rounded-full ${item.available ? 'bg-green-500' : 'bg-red-500'}`} title={item.available ? "Available" : "Unavailable"}></span>
                   </div>
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => openRecipeEditor(item)}
+                    >
+                      <BookOpen className="mr-2 h-4 w-4" />
+                      Edit Recipe
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -398,6 +416,17 @@ export default function MenuPage() {
           </Button>
         </JojoDialog>
       )}
+
+      <MenuRecipeDialog
+        open={Boolean(recipeItem)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setRecipeItem(null);
+          }
+        }}
+        businessUnit={mode}
+        menuItem={recipeItem}
+      />
     </AppLayout>
   );
 }

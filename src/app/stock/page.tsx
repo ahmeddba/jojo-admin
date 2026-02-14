@@ -20,7 +20,7 @@ import {
   updateIngredient,
   deleteIngredient,
 } from "@/lib/queries/stock";
-import type { IngredientWithStatus, BusinessUnit } from "@/lib/database.types";
+import type { IngredientWithStatus, BusinessUnit, StockStatus } from "@/lib/database.types";
 
 const IngredientSchema = Yup.object({
   name: Yup.string().required("Required"),
@@ -39,6 +39,26 @@ type IngredientFormValues = {
   min_quantity: number;
   supplier_phone: string;
 };
+
+function resolveSeuil(item: IngredientWithStatus): number {
+  if (typeof item.seuil === "number") {
+    return Number(item.seuil);
+  }
+  return Number(item.min_quantity);
+}
+
+function resolveStatus(item: IngredientWithStatus): StockStatus {
+  const quantity = Number(item.quantity);
+  const seuil = resolveSeuil(item);
+
+  if (quantity <= 0) {
+    return "out_of_stock";
+  }
+  if (quantity <= seuil) {
+    return "low_stock";
+  }
+  return "in_stock";
+}
 
 export default function StockPage() {
   const [mode, setMode] = useState<BusinessUnit>("restaurant");
@@ -72,7 +92,7 @@ export default function StockPage() {
   const filtered = useMemo(
     () =>
       items.filter((i) => {
-        if (filter !== "all" && i.computed_status !== filter) return false;
+        if (filter !== "all" && resolveStatus(i) !== filter) return false;
         if (!search.trim()) return true;
         return i.name.toLowerCase().includes(search.toLowerCase());
       }),
@@ -81,7 +101,10 @@ export default function StockPage() {
 
   // Computed stats
   const totalItems = filtered.length;
-  const lowStockCount = filtered.filter(i => i.computed_status === "low_stock" || i.computed_status === "out_of_stock").length;
+  const lowStockCount = filtered.filter((i) => {
+    const status = resolveStatus(i);
+    return status === "low_stock" || status === "out_of_stock";
+  }).length;
   const totalValue = filtered.reduce((acc, i) => acc + Number(i.total_value), 0);
 
   const openAdd = () => {
@@ -141,15 +164,16 @@ export default function StockPage() {
       await deleteIngredient(supabase, editingItem.id);
       setItems((prev) => prev.filter((i) => i.id !== editingItem.id));
       closeDialog();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Delete error:", err);
-      alert(err.message || "Failed to delete. Please try again.");
+      const message = err instanceof Error ? err.message : "Failed to delete. Please try again.";
+      alert(message);
     } finally {
       setSaving(false);
     }
   };
 
-  const mapStatus = (status: string): "in-stock" | "low-stock" | "out-of-stock" => {
+  const mapStatus = (status: StockStatus): "in-stock" | "low-stock" | "out-of-stock" => {
     if (status === "in_stock") return "in-stock";
     if (status === "low_stock") return "low-stock";
     return "out-of-stock";
@@ -263,12 +287,17 @@ export default function StockPage() {
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Quantity</th>
+                    <th className="px-6 py-4">Seuil</th>
                     <th className="px-6 py-4">Price</th>
                     <th className="px-6 py-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filtered.map((item) => (
+                  {filtered.map((item) => {
+                    const status = resolveStatus(item);
+                    const seuilValue = resolveSeuil(item);
+
+                    return (
                     <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -287,12 +316,17 @@ export default function StockPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <StatusPill status={mapStatus(item.computed_status)} />
+                        <StatusPill status={mapStatus(status)} />
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                            <span className="font-medium text-slate-700 dark:text-slate-200">{Number(item.quantity)} {item.unit}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                          {Number(seuilValue)} {item.unit}
+                        </span>
                       </td>
                       <td className="px-6 py-4 font-chart tabular-nums">
                         TND {Number(item.price_per_unit).toFixed(2)}
@@ -308,7 +342,8 @@ export default function StockPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -323,7 +358,7 @@ export default function StockPage() {
           validationSchema={IngredientSchema}
           onSubmit={handleSubmit}
         >
-          {({ values, errors, touched, handleChange: formikChange, isSubmitting }) => (
+          {({ values, errors, touched, handleChange: formikChange }) => (
             <Form>
               <JojoDialog
                 open
@@ -383,7 +418,7 @@ export default function StockPage() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="min_quantity">Min Quantity</Label>
+                      <Label htmlFor="min_quantity">Seuil</Label>
                       <Input
                         id="min_quantity"
                         name="min_quantity"

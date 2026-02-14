@@ -6,6 +6,7 @@ export type BusinessUnit = "restaurant" | "coffee";
 export type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
 export type UserRole = "admin" | "staff";
 export type ReportStatus = "pending" | "synced" | "verified";
+export type OrderStatus = "PENDING_WEBHOOK" | "FAILED_WEBHOOK" | "SUBMITTED";
 
 /* ---- Row types ---- */
 
@@ -24,6 +25,7 @@ export interface Ingredient {
   name: string;
   quantity: number;
   unit: string;
+  seuil?: number | null;
   price_per_unit: number;
   min_quantity: number;
   supplier_phone: string;
@@ -50,6 +52,8 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
+  price_tnd?: number | null;
+  category?: string | null;
   category_id: string | null;
   available: boolean;
   image_url: string | null;
@@ -60,11 +64,21 @@ export interface MenuItem {
   menu_categories?: MenuCategory;
 }
 
+export interface MenuItemIngredient {
+  id: string;
+  menu_item_id: string;
+  ingredient_id: string;
+  qty_used: number;
+  created_at: string;
+  ingredients?: Ingredient | Ingredient[];
+}
+
 export interface Deal {
   id: string;
   name: string;
   description: string;
   price: number;
+  price_tnd?: number | null;
   image_url: string | null;
   active: boolean;
   business_unit: BusinessUnit;
@@ -124,7 +138,96 @@ export interface SaleItem {
   menu_item_id: string;
   quantity: number;
   unit_price: number;
+  business_unit: BusinessUnit;
   created_at: string;
+}
+
+export interface Order {
+  id: string;
+  business_unit: BusinessUnit;
+  table_number: string | null;
+  status: OrderStatus;
+  inventory_applied?: boolean;
+  total_tnd: number;
+  notes: string | null;
+  external_ref: string | null;
+  webhook_error: string | null;
+  created_at: string;
+  order_items?: OrderItem[];
+  tickets?: Ticket | Ticket[] | null;
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  item_type: "menu" | "deal";
+  item_id: string | null;
+  name_snapshot: string;
+  qty: number;
+  unit_price_tnd: number;
+  line_total_tnd: number;
+  created_at: string;
+}
+
+export interface Ticket {
+  id: string;
+  business_unit: BusinessUnit;
+  order_id: string;
+  ticket_number: number;
+  ticket_date: string;
+  content_text: string;
+  created_at: string;
+}
+
+export interface ZReport {
+  id: string;
+  business_unit: BusinessUnit;
+  day: string;
+  total_orders: number;
+  total_revenue_tnd: number;
+  created_at: string;
+}
+
+export interface InventoryConsumptionSummaryItem {
+  ingredient_id: string;
+  before_quantity: number;
+  after_quantity: number;
+  alert_generated: boolean;
+}
+
+export interface InventoryConsumptionResult {
+  order_id: string;
+  already_applied: boolean;
+  alerts_generated: number;
+  ingredients: InventoryConsumptionSummaryItem[];
+}
+
+export interface StockAlertEvent {
+  id: string;
+  ingredient_id: string;
+  event_type: "LOW_STOCK" | "OUT_OF_STOCK";
+  quantity_after: number;
+  seuil: number;
+  created_at: string;
+  processed_at: string | null;
+  meta: Record<string, unknown> | null;
+}
+
+export interface DealOrderItem extends DealItem {
+  quantity: number;
+}
+
+export interface PosDeal extends Deal {
+  deal_items?: DealOrderItem[];
+}
+
+export interface CartItem {
+  item_type: "menu" | "deal";
+  item_id: string;
+  name_snapshot: string;
+  unit_price_snapshot: number;
+  qty: number;
+  line_total_tnd: number;
 }
 
 /* ---- RPC return types ---- */
@@ -165,3 +268,14 @@ export type DealUpdate = Partial<DealInsert>;
 
 export type SupplierInvoiceInsert = Omit<SupplierInvoice, "id" | "created_at" | "updated_at">;
 export type DailyReportInsert = Omit<DailyReport, "id" | "created_at" | "updated_at">;
+export type OrderInsert = Omit<
+  Order,
+  | "id"
+  | "created_at"
+  | "order_items"
+  | "tickets"
+>;
+export type OrderUpdate = Partial<OrderInsert>;
+
+export type OrderItemInsert = Omit<OrderItem, "id" | "created_at">;
+export type OrderItemUpdate = Partial<OrderItemInsert>;
