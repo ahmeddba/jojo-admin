@@ -10,6 +10,7 @@ import {
   BookOpen,
   Tag,
   Receipt,
+  ScrollText,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -37,11 +38,12 @@ export const Sidebar = () => {
     { href: "/stock", label: "Inventory", icon: Boxes },
     { href: "/menu", label: "Menu Mgmt", icon: BookOpen },
     { href: "/best-deals", label: "Promotions", icon: Tag },
+    { href: "/orders", label: "Orders", icon: ScrollText },
     { href: "/caisse", label: "Financials", icon: Receipt },
   ];
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-white/50 dark:bg-black/20 flex flex-col p-4 backdrop-blur-sm border-r border-slate-200 dark:border-slate-800 h-screen sticky top-0">
+    <aside className="w-64 flex-shrink-0 bg-white/50 flex flex-col p-4 backdrop-blur-sm border-r border-slate-200 h-screen sticky top-0">
       {/* Logo */}
       <div className="flex items-center justify-center gap-3 mb-4">
         <Image
@@ -66,8 +68,8 @@ export const Sidebar = () => {
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors",
                 active
-                  ? "bg-primary/10 dark:bg-primary/20 text-primary dark:text-antique-gold font-semibold"
-                  : "text-slate-600 dark:text-slate-400 hover:bg-primary/5 hover:text-primary dark:hover:bg-primary/10 dark:hover:text-antique-gold"
+                  ? "bg-primary text-white font-bold shadow-md"
+                  : "text-slate-600 hover:bg-primary/5 hover:text-primary"
               )}
             >
               <Icon className="h-5 w-5" />
@@ -81,14 +83,14 @@ export const Sidebar = () => {
       <div className="mt-auto flex flex-col gap-2">
         <Link
           href="#"
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700/50 transition-colors"
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors"
         >
           <Settings className="h-5 w-5" />
           Settings
         </Link>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700/50 transition-colors w-full text-left"
+          className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors w-full text-left"
         >
           <LogOut className="h-5 w-5" />
           Logout

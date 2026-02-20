@@ -21,6 +21,7 @@ type Props = {
   secondaryLabel?: string;
   variant?: "default" | "destructive";
   disabled?: boolean;
+  showSecondary?: boolean;
 };
 
 export const JojoDialog: React.FC<Props> = ({
@@ -34,7 +35,8 @@ export const JojoDialog: React.FC<Props> = ({
   secondaryLabel = "Cancel",
   variant = "default",
   disabled = false,
-}) => {
+  showSecondary = true,
+}: Props & { showSecondary?: boolean }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg bg-white rounded-[12px] shadow-jojo border border-jojo-border">
@@ -50,15 +52,17 @@ export const JojoDialog: React.FC<Props> = ({
         <div className="space-y-4 pt-2">{children}</div>
 
         <DialogFooter className="pt-4 border-t border-jojo-border/40 mt-4">
-          <Button
-            type="button"
-            variant="outline"
-            className="bg-jojo-surface-light text-jojo-text-secondary hover:bg-jojo-surface"
-            onClick={() => onOpenChange(false)}
-            disabled={disabled}
-          >
-            {secondaryLabel}
-          </Button>
+          {showSecondary && (
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-jojo-surface-light text-jojo-text-secondary hover:bg-jojo-surface"
+              onClick={() => onOpenChange(false)}
+              disabled={disabled}
+            >
+              {secondaryLabel}
+            </Button>
+          )}
           <Button
             type="submit"
             className={
