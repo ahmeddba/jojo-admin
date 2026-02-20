@@ -38,8 +38,8 @@ export function OrderCart({
   formik,
 }: OrderCartProps) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white">Current Order</h2>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="font-display text-xl font-bold text-slate-900">Current Order</h2>
 
       <div className="mt-4 space-y-3">
         {cartItems.length === 0 ? (
@@ -48,14 +48,14 @@ export function OrderCart({
           cartItems.map((item) => (
             <article
               key={`${item.item_type}-${item.item_id}`}
-              className="rounded-md border border-slate-200 p-3 dark:border-slate-700"
+              className="rounded-md border border-slate-200 p-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.name_snapshot}</p>
+                  <p className="text-sm font-semibold text-slate-900">{item.name_snapshot}</p>
                   <p className="text-xs uppercase text-slate-500">{item.item_type}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                <p className="text-sm font-semibold text-slate-900">
                   {formatMoney(item.line_total_tnd)}
                 </p>
               </div>
@@ -93,7 +93,7 @@ export function OrderCart({
         )}
       </div>
 
-      <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+      <div className="mt-4 space-y-3 rounded-md border border-slate-200 p-3">
         <div>
           <Label htmlFor="table_number">Table Number *</Label>
           <Input
@@ -126,8 +126,8 @@ export function OrderCart({
         </div>
       </div>
 
-      <div className="mt-4 rounded-md bg-slate-50 p-3 dark:bg-slate-700/40">
-        <div className="flex items-center justify-between text-base font-bold text-slate-900 dark:text-white">
+      <div className="mt-4 rounded-md bg-slate-50 p-3">
+        <div className="flex items-center justify-between text-base font-bold text-slate-900">
           <span>Total</span>
           <span>{formatMoney(totalTnd)}</span>
         </div>

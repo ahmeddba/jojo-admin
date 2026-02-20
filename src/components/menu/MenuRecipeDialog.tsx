@@ -8,13 +8,14 @@ import { JojoDialog } from "@/components/modals/JojoDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatQuantity } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import {
   deleteMenuItemRecipeIngredient,
   fetchMenuItemRecipe,
   fetchRecipeIngredients,
   upsertMenuItemRecipeIngredient,
-} from "@/lib/queries/menu";
+} from "@/services/menu/menuService";
 import type {
   BusinessUnit,
   Ingredient,
@@ -68,6 +69,7 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
   const [saving, setSaving] = useState(false);
   const [editingRow, setEditingRow] = useState<MenuItemIngredient | null>(null);
   const [ingredientSearch, setIngredientSearch] = useState("");
+  const [ingredientFocused, setIngredientFocused] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadRecipeData = useCallback(async () => {
@@ -184,7 +186,7 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
         }
       }}
     >
-      {({ values, errors, touched, handleChange, setValues }) => (
+      {({ values, errors, touched, handleChange, setValues, submitForm }) => (
         <Form>
           <JojoDialog
             open={open}
@@ -192,6 +194,7 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
             title={menuItem ? `Edit Recipe · ${menuItem.name}` : "Edit Recipe"}
             description="Map ingredients and consumed quantities for this menu item."
             primaryLabel={saving ? "Saving..." : editingRow ? "Update Ingredient" : "Add Ingredient"}
+            onPrimaryClick={submitForm}
             disabled={saving || loading || !menuItemId}
           >
             {loading ? (
@@ -201,37 +204,72 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
               </div>
             ) : (
               <div className="space-y-4">
-                <div>
-                  <Label htmlFor="ingredient-search">Search Ingredient</Label>
-                  <Input
-                    id="ingredient-search"
-                    value={ingredientSearch}
-                    onChange={(event) => setIngredientSearch(event.target.value)}
-                    placeholder="Type ingredient name..."
-                    className="mt-1"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="ingredient_id">Ingredient</Label>
-                  <select
-                    id="ingredient_id"
-                    name="ingredient_id"
-                    value={values.ingredient_id}
-                    onChange={handleChange}
-                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">Select ingredient</option>
-                    {filteredIngredients.map((ingredient) => (
-                      <option key={ingredient.id} value={ingredient.id}>
-                        {ingredient.name} ({ingredient.unit})
-                      </option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <Label htmlFor="ingredient-search">Ingredient</Label>
+                  {values.ingredient_id ? (
+                    <div className="mt-1 flex items-center gap-2 rounded-md border border-jojo-green/30 bg-jojo-green/5 px-3 py-2">
+                      <span className="text-sm font-medium text-jojo-text">
+                        {ingredients.find((i) => i.id === values.ingredient_id)?.name ?? "Selected"}{" "}
+                        <span className="text-xs text-slate-400">
+                          ({ingredients.find((i) => i.id === values.ingredient_id)?.unit ?? ""})
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className="ml-auto rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                        onClick={() => {
+                          setValues({ ...values, ingredient_id: "" });
+                          setIngredientSearch("");
+                        }}
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Input
+                        id="ingredient-search"
+                        value={ingredientSearch}
+                        onChange={(event) => setIngredientSearch(event.target.value)}
+                        onFocus={() => setIngredientFocused(true)}
+                        onBlur={() => setTimeout(() => setIngredientFocused(false), 150)}
+                        placeholder="Type to search ingredients..."
+                        className="mt-1"
+                        autoComplete="off"
+                      />
+                      {ingredientFocused && filteredIngredients.length > 0 && (
+                        <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                          {filteredIngredients.map((ingredient) => (
+                            <button
+                              key={ingredient.id}
+                              type="button"
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-jojo-surface-light transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault(); // Prevent input blur
+                                setValues({ ...values, ingredient_id: ingredient.id });
+                                setIngredientSearch("");
+                                setIngredientFocused(false);
+                              }}
+                            >
+                              <span className="font-medium text-slate-800">{ingredient.name}</span>
+                              <span className="text-xs text-slate-400">{ingredient.unit}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {ingredientFocused && ingredientSearch.trim().length > 0 && filteredIngredients.length === 0 && (
+                        <p className="mt-1 text-xs text-slate-400">No ingredients found</p>
+                      )}
+                    </>
+                  )}
                   {touched.ingredient_id && errors.ingredient_id ? (
                     <p className="mt-1 text-xs text-red-600">{errors.ingredient_id}</p>
                   ) : null}
                 </div>
+
 
                 <div>
                   <Label htmlFor="qty_used">Qty Used</Label>
@@ -266,8 +304,8 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
                   </div>
                 ) : null}
 
-                <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">Current Recipe</p>
+                <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                  <p className="text-sm font-semibold text-slate-900">Current Recipe</p>
 
                   {recipeRows.length === 0 ? (
                     <p className="text-sm text-slate-500">No recipe set</p>
@@ -281,12 +319,12 @@ export function MenuRecipeDialog({ open, onOpenChange, businessUnit, menuItem }:
                         return (
                           <div
                             key={row.id}
-                            className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700"
+                            className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2"
                           >
                             <div>
-                              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{ingredientName}</p>
+                              <p className="text-sm font-medium text-slate-800">{ingredientName}</p>
                               <p className="text-xs text-slate-500">
-                                {Number(row.qty_used).toFixed(4)} {unit}
+                                {formatQuantity(row.qty_used, unit)} {unit}
                               </p>
                             </div>
 

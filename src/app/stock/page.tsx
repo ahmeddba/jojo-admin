@@ -11,24 +11,35 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/common/SearchInput";
-import { SegmentedToggle } from "@/components/common/SegmentedToggle";
-import { Pencil, Trash2, Plus, Loader2 } from "lucide-react";
+import { Pencil, Trash2, Plus, Loader2, Package, FileText } from "lucide-react";
+import { StockHistory } from "@/components/stock/StockHistory";
+import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase";
 import {
   fetchIngredients,
   createIngredient,
   updateIngredient,
   deleteIngredient,
-} from "@/lib/queries/stock";
-import type { IngredientWithStatus, BusinessUnit, StockStatus } from "@/lib/database.types";
+  restockIngredient,
+  fetchStockAudits,
+} from "@/services/stock/stockService";
+import { uploadInvoiceFile, createInvoice } from "@/services/caisse/caisseService";
+import { formatQuantity } from "@/lib/utils";
+import type { IngredientWithStatus, BusinessUnit, StockStatus, StockAudit } from "@/lib/database.types";
 
 const IngredientSchema = Yup.object({
-  name: Yup.string().required("Required"),
-  quantity: Yup.number().min(0).required("Required"),
-  unit: Yup.string().required("Required"),
-  price_per_unit: Yup.number().min(0).required("Required"),
-  min_quantity: Yup.number().min(0).required("Required"),
-  supplier_phone: Yup.string().required("Required"),
+  name: Yup.string().trim().required("Ingredient name is required"),
+  quantity: Yup.number().min(0, "Quantity cannot be negative").optional(),
+  unit: Yup.string().trim().required("Unit is required (e.g. kg, L, pcs)"),
+  price_per_unit: Yup.number()
+    .typeError("Price must be a number")
+    .min(1, "Price must be at least 1")
+    .required("Price per unit is required"),
+  min_quantity: Yup.number()
+    .typeError("Seuil must be a number")
+    .min(0, "Seuil cannot be negative")
+    .required("Seuil (min quantity) is required"),
+  supplier_phone: Yup.string().trim().required("Supplier phone is required"),
 });
 
 type IngredientFormValues = {
@@ -62,22 +73,37 @@ function resolveStatus(item: IngredientWithStatus): StockStatus {
 
 export default function StockPage() {
   const [mode, setMode] = useState<BusinessUnit>("restaurant");
+  const [view, setView] = useState<"inventory" | "history">("inventory");
   const [filter, setFilter] = useState<"all" | "in_stock" | "low_stock" | "out_of_stock">("all");
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<IngredientWithStatus[]>([]);
+  const [audits, setAudits] = useState<StockAudit[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const toast = useToast();
+
   const [editingItem, setEditingItem] = useState<IngredientWithStatus | null>(null);
-  const [dialogMode, setDialogMode] = useState<"add" | "edit" | "delete" | null>(null);
+  const [dialogMode, setDialogMode] = useState<"add" | "edit" | "delete" | "restock" | null>(null);
+  const [restockQty, setRestockQty] = useState<number>(0);
+  
+  // Invoice state
+  const [supplierName, setSupplierName] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceAmount, setInvoiceAmount] = useState<number>(0);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
 
   const supabase = createClient();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchIngredients(supabase, mode);
-      setItems(data);
+      const [itemsData, auditsData] = await Promise.all([
+        fetchIngredients(supabase, mode),
+        fetchStockAudits(supabase, mode),
+      ]);
+      setItems(itemsData);
+      setAudits(auditsData);
     } catch (err) {
       console.error("Stock fetch error:", err);
     } finally {
@@ -124,11 +150,75 @@ export default function StockPage() {
 
   const closeDialog = () => setDialogMode(null);
 
+  const openRestock = (item: IngredientWithStatus) => {
+    setEditingItem(item);
+    setRestockQty(0);
+    setSupplierName("");
+    setInvoiceNumber("");
+    setInvoiceAmount(0);
+    setInvoiceFile(null);
+    setDialogMode("restock");
+  };
+
+  const handleRestock = async () => {
+    if (!editingItem || restockQty <= 0) return;
+    setSaving(true);
+    try {
+      let invoiceId: string | undefined;
+
+      // Handle Invoice Creation if details provided
+      if (supplierName && invoiceNumber && invoiceAmount > 0) {
+        let fileUrl = null;
+        if (invoiceFile) {
+           fileUrl = await uploadInvoiceFile(supabase, invoiceFile, mode);
+        }
+        
+        const invoice = await createInvoice(supabase, {
+           supplier_name: supplierName,
+           supplier_phone: editingItem.supplier_phone, // Inherit from item logic
+           invoice_number: invoiceNumber,
+           amount: invoiceAmount,
+           currency: "TND",
+           date_received: new Date().toISOString(),
+           file_url: fileUrl,
+           business_unit: mode
+        });
+        invoiceId = invoice.id;
+      }
+
+      const updated = await restockIngredient(
+        supabase, 
+        editingItem.id, 
+        restockQty,
+        // Pass info for audit log even if no invoice record created, if name provided
+        supplierName ? {
+          name: supplierName,
+          invoice_number: invoiceNumber,
+          invoice_id: invoiceId
+        } : undefined
+      );
+
+      setItems((prev) =>
+        prev.map((i) => (i.id === editingItem.id ? updated : i))
+      );
+      // Refresh audits to show new action immediately
+      fetchStockAudits(supabase, mode).then(setAudits);
+      
+      closeDialog();
+      toast.success(`Added ${restockQty} ${editingItem.unit} to ${editingItem.name}`);
+    } catch (err) {
+      console.error("Restock error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to restock. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const initialValuesFromItem = (item?: IngredientWithStatus): IngredientFormValues => ({
     name: item?.name ?? "",
     quantity: item?.quantity ?? 0,
     unit: item?.unit ?? "",
-    price_per_unit: item?.price_per_unit ?? 0,
+    price_per_unit: item?.price_per_unit ?? 1,
     min_quantity: item?.min_quantity ?? 0,
     supplier_phone: item?.supplier_phone ?? "",
   });
@@ -142,16 +232,20 @@ export default function StockPage() {
           business_unit: mode,
         });
         setItems((prev) => [...prev, newItem]);
+        fetchStockAudits(supabase, mode).then(setAudits);
+        toast.success(`"${values.name}" added successfully`);
       } else if (dialogMode === "edit" && editingItem) {
         const updated = await updateIngredient(supabase, editingItem.id, values);
         setItems((prev) =>
           prev.map((i) => (i.id === editingItem.id ? updated : i))
         );
+        fetchStockAudits(supabase, mode).then(setAudits);
+        toast.success(`"${values.name}" updated successfully`);
       }
       closeDialog();
     } catch (err) {
       console.error("Save error:", err);
-      alert("Failed to save. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to save. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -163,11 +257,12 @@ export default function StockPage() {
     try {
       await deleteIngredient(supabase, editingItem.id);
       setItems((prev) => prev.filter((i) => i.id !== editingItem.id));
+      fetchStockAudits(supabase, mode).then(setAudits);
       closeDialog();
+      toast.success(`"${editingItem.name}" deleted`);
     } catch (err: unknown) {
       console.error("Delete error:", err);
-      const message = err instanceof Error ? err.message : "Failed to delete. Please try again.";
-      alert(message);
+      toast.error(err instanceof Error ? err.message : "Failed to delete. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -184,51 +279,65 @@ export default function StockPage() {
       <div className="flex flex-col gap-6">
         {/* Header */}
         <div className="flex justify-between items-center">
-          <h1 className="font-display text-4xl font-bold text-slate-900 dark:text-white">Inventory Control</h1>
+          <h1 className="font-display text-4xl font-bold text-slate-900">Inventory Control</h1>
           <Button className="bg-primary hover:bg-primary-dark text-white shadow-lg transition-transform hover:scale-105" onClick={openAdd}>
             <Plus className="h-5 w-5 mr-2" />
-            Add Product
+            Add Ingredient
           </Button>
         </div>
 
         {/* Business Unit Toggle */}
         <div className="flex items-center gap-4">
-           <SegmentedToggle
-            options={[
-              { value: "restaurant", label: "Restaurant" },
-              { value: "coffee", label: "Coffee Shop" },
-            ]}
-            value={mode}
-            onChange={(v) => setMode(v === "coffee" ? "coffee" : "restaurant")}
-          />
+          <div className="flex p-1 bg-slate-200 rounded-lg">
+            <button
+              onClick={() => setMode("restaurant")}
+              className={`px-6 py-2 rounded-md font-semibold transition-all ${
+                mode === "restaurant"
+                  ? "bg-white text-primary shadow"
+                  : "text-slate-600"
+              }`}
+            >
+              Restaurant
+            </button>
+            <button
+              onClick={() => setMode("coffee")}
+              className={`px-6 py-2 rounded-md font-semibold transition-all ${
+                mode === "coffee"
+                  ? "bg-white text-primary shadow"
+                  : "text-slate-600"
+              }`}
+            >
+              Coffee
+            </button>
+          </div>
         </div>
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Total Items</p>
-              <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{totalItems}</h3>
+              <h3 className="text-3xl font-bold text-slate-900 mt-1">{totalItems}</h3>
             </div>
             <div className="p-3 bg-blue-100 text-blue-700 rounded-full">
                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
             </div>
           </div>
           
-          <div className="p-6 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Low Stock</p>
-              <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{lowStockCount}</h3>
+              <h3 className="text-3xl font-bold text-slate-900 mt-1">{lowStockCount}</h3>
             </div>
             <div className="p-3 bg-red-100 text-red-700 rounded-full">
                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M3.5 20h17a2 2 0 0 0 1.7-2.9l-8.5-13.8a2 2 0 0 0-3.4 0l-8.5 13.8a2 2 0 0 0 1.7 2.9z"/></svg>
             </div>
           </div>
 
-          <div className="p-6 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Total Value</p>
-              <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-1">TND {totalValue.toFixed(2)}</h3>
+              <h3 className="text-3xl font-bold text-slate-900 mt-1">TND {totalValue.toFixed(2)}</h3>
             </div>
             <div className="p-3 bg-green-100 text-green-700 rounded-full">
                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
@@ -236,9 +345,10 @@ export default function StockPage() {
           </div>
         </div>
 
-        {/* Filters & Search */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-           <div className="flex items-center gap-4 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 w-full md:w-auto">
+        <div className="space-y-4">
+          {/* Filters & Search */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+               <div className="flex items-center gap-4 bg-white p-2 rounded-lg border border-slate-200 w-full md:w-auto">
              <SearchInput
                placeholder="Search inventory..."
                value={search}
@@ -246,108 +356,142 @@ export default function StockPage() {
              />
            </div>
            
-           <div className="flex gap-2">
-              <select 
-                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 text-sm focus:ring-primary focus:border-primary"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as typeof filter)}
-              >
-                  <option value="all">All Status</option>
-                  <option value="in_stock">In Stock</option>
-                  <option value="low_stock">Low Stock</option>
-                  <option value="out_of_stock">Out of Stock</option>
-              </select>
-              <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
-                More Filters
-              </button>
+           <div className="flex gap-4">
+              {/* View Toggle */}
+              <div className="flex p-1 bg-slate-200 rounded-lg">
+                <button
+                  onClick={() => setView("inventory")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    view === "inventory"
+                      ? "bg-white text-slate-900 shadow"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Inventory
+                </button>
+                <button
+                  onClick={() => setView("history")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    view === "history"
+                      ? "bg-white text-slate-900 shadow"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  History
+                </button>
+              </div>
+
+              {view === "inventory" && (
+                <select 
+                  className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm focus:ring-primary focus:border-primary"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as typeof filter)}
+                >
+                    <option value="all">All Status</option>
+                    <option value="in_stock">In Stock</option>
+                    <option value="low_stock">Low Stock</option>
+                    <option value="out_of_stock">Out of Stock</option>
+                </select>
+              )}
            </div>
         </div>
 
-        {/* Table */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <span className="ml-2 text-slate-500">Loading inventory...</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              title="No items found"
-              description="Adjust filters or add a new item."
-              actionLabel="Add Item"
-              onAction={openAdd}
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 dark:bg-slate-700/50 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                  <tr>
-                    <th className="px-6 py-4">Product</th>
-                    <th className="px-6 py-4">Category</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Quantity</th>
-                    <th className="px-6 py-4">Seuil</th>
-                    <th className="px-6 py-4">Price</th>
-                    <th className="px-6 py-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filtered.map((item) => {
-                    const status = resolveStatus(item);
-                    const seuilValue = resolveSeuil(item);
-
-                    return (
-                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                           <div className="w-10 h-10 rounded-md bg-slate-100 flex items-center justify-center text-xl">
-                              🍎
-                           </div>
-                           <div>
-                             <p className="font-semibold text-slate-900 dark:text-white">{item.name}</p>
-                             <p className="text-xs text-slate-500">ID: {item.id.slice(0, 8)}</p>
-                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                          {item.business_unit === 'restaurant' ? 'Kitchen' : 'Barista'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <StatusPill status={mapStatus(status)} />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                           <span className="font-medium text-slate-700 dark:text-slate-200">{Number(item.quantity)} {item.unit}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          {Number(seuilValue)} {item.unit}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-chart tabular-nums">
-                        TND {Number(item.price_per_unit).toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center gap-2">
-                          <button onClick={() => openEdit(item)} className="p-2 text-slate-400 hover:text-primary transition-colors">
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => openDelete(item)} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+        {view === "inventory" ? (
+          /* Table */
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <span className="ml-2 text-slate-500">Loading inventory...</span>
+              </div>
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title="No ingredients found"
+                description="Adjust filters or add a new ingredient."
+                actionLabel="Add Ingredient"
+                onAction={openAdd}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="px-6 py-4">Ingredient</th>
+                      <th className="px-6 py-4">Category</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Quantity</th>
+                      <th className="px-6 py-4">Seuil</th>
+                      <th className="px-6 py-4">Price</th>
+                      <th className="px-6 py-4 text-center">Actions</th>
                     </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filtered.map((item) => {
+                      const status = resolveStatus(item);
+                      // const seuilValue = resolveSeuil(item); // Unused
+
+                      return (
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                             <div>
+                               <p className="font-semibold text-slate-900">{item.name}</p>
+                               <p className="text-xs text-slate-500">ID: {item.id.slice(0, 8)}</p>
+                             </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600">
+                            {item.business_unit === 'restaurant' ? 'Kitchen' : 'Barista'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusPill status={mapStatus(status)} />
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                             <span className="font-medium text-slate-700">{formatQuantity(item.quantity, item.unit)} {item.unit}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="font-medium text-slate-700">
+                            {formatQuantity(resolveSeuil(item), item.unit)} {item.unit}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-chart tabular-nums">
+                          TND {Number(item.price_per_unit).toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            <button onClick={() => openRestock(item)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Restock">
+                              <Package className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => openEdit(item)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Edit">
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => openDelete(item)} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Delete">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+           loading ? (
+              <div className="flex items-center justify-center py-16 bg-white rounded-lg border border-slate-200">
+                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                 <span className="ml-2 text-slate-500">Loading history...</span>
+              </div>
+           ) : (
+             <StockHistory audits={audits} />
+           )
+        )}
         </div>
       </div>
 
@@ -358,17 +502,19 @@ export default function StockPage() {
           validationSchema={IngredientSchema}
           onSubmit={handleSubmit}
         >
-          {({ values, errors, touched, handleChange: formikChange }) => (
+          {({ values, errors, touched, handleChange: formikChange, submitForm }) => (
             <Form>
               <JojoDialog
                 open
                 onOpenChange={closeDialog}
-                title={dialogMode === "add" ? "Record New Item" : "Edit Item"}
-                primaryLabel={saving ? "Saving..." : "Save Item"}
+                title={dialogMode === "add" ? "Record New Ingredient" : "Edit Ingredient"}
+                primaryLabel={saving ? "Saving..." : "Save Ingredient"}
+                onPrimaryClick={submitForm}
+                disabled={saving}
               >
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="name">Item Name</Label>
+                    <Label htmlFor="name">Ingredient Name</Label>
                     <Input
                       id="name"
                       name="name"
@@ -382,6 +528,7 @@ export default function StockPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
+                    {dialogMode === "edit" && (
                     <div>
                       <Label htmlFor="quantity">Quantity</Label>
                       <Input
@@ -392,9 +539,13 @@ export default function StockPage() {
                         onChange={formikChange}
                         className="mt-1"
                       />
+                      {touched.quantity && errors.quantity && (
+                        <p className="text-xs text-red-600 mt-1">{errors.quantity}</p>
+                      )}
                     </div>
+                    )}
                     <div>
-                      <Label htmlFor="unit">Unit</Label>
+                      <Label htmlFor="unit">Unit (e.g. kg, L, pcs)</Label>
                       <Input
                         id="unit"
                         name="unit"
@@ -402,6 +553,9 @@ export default function StockPage() {
                         onChange={formikChange}
                         className="mt-1"
                       />
+                      {touched.unit && errors.unit && (
+                        <p className="text-xs text-red-600 mt-1">{errors.unit}</p>
+                      )}
                     </div>
                   </div>
 
@@ -416,6 +570,9 @@ export default function StockPage() {
                         onChange={formikChange}
                         className="mt-1"
                       />
+                      {touched.price_per_unit && errors.price_per_unit && (
+                        <p className="text-xs text-red-600 mt-1">{errors.price_per_unit}</p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="min_quantity">Seuil</Label>
@@ -427,6 +584,9 @@ export default function StockPage() {
                         onChange={formikChange}
                         className="mt-1"
                       />
+                      {touched.min_quantity && errors.min_quantity && (
+                        <p className="text-xs text-red-600 mt-1">{errors.min_quantity}</p>
+                      )}
                     </div>
                   </div>
 
@@ -439,6 +599,9 @@ export default function StockPage() {
                       onChange={formikChange}
                       className="mt-1"
                     />
+                    {touched.supplier_phone && errors.supplier_phone && (
+                      <p className="text-xs text-red-600 mt-1">{errors.supplier_phone}</p>
+                    )}
                   </div>
                 </div>
               </JojoDialog>
@@ -463,6 +626,115 @@ export default function StockPage() {
           </p>
         </JojoDialog>
       )}
+
+      {/* Restock Dialog */}
+      {dialogMode === "restock" && editingItem && (
+        <JojoDialog
+          open
+          onOpenChange={closeDialog}
+          title={`Restock: ${editingItem.name}`}
+          primaryLabel={saving ? "Adding..." : "Add to Stock"}
+          onPrimaryClick={handleRestock}
+          disabled={saving || restockQty <= 0}
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+              <Package className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-sm font-medium text-slate-700">Current Stock</p>
+                <p className="text-lg font-bold text-slate-900">
+                  {formatQuantity(editingItem.quantity, editingItem.unit)} {editingItem.unit}
+                </p>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="restock_qty">How much arrived? ({editingItem.unit})</Label>
+              <Input
+                id="restock_qty"
+                type="number"
+                min={0}
+                step="any"
+                value={restockQty || ""}
+                onChange={(e) => setRestockQty(Number(e.target.value))}
+                className="mt-1 text-lg"
+                placeholder={`Enter quantity in ${editingItem.unit}`}
+                autoFocus
+              />
+            </div>
+            {restockQty > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                <span className="text-green-600 font-bold text-lg">→</span>
+                <div>
+                  <p className="text-sm font-medium text-green-700">New Stock Level</p>
+                  <p className="text-lg font-bold text-green-800">
+                    {formatQuantity(Number(editingItem.quantity) + restockQty, editingItem.unit)} {editingItem.unit}
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-slate-500" />
+                Attach Invoice (Optional)
+              </h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="supplier_name" className="text-xs">Supplier Name</Label>
+                    <Input
+                      id="supplier_name"
+                      value={supplierName}
+                      onChange={(e) => setSupplierName(e.target.value)}
+                      placeholder="e.g. Metro"
+                      className="mt-1 h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="invoice_num" className="text-xs">Invoice #</Label>
+                    <Input
+                      id="invoice_num"
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      placeholder="e.g. INV-001"
+                      className="mt-1 h-8 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="inv_amount" className="text-xs">Amount (TND)</Label>
+                    <Input
+                      id="inv_amount"
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={invoiceAmount || ""}
+                      onChange={(e) => setInvoiceAmount(Number(e.target.value))}
+                      placeholder="0.000"
+                      className="mt-1 h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="inv_file" className="text-xs">Upload File</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                       <Input
+                          id="inv_file"
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+                          className="h-8 text-xs file:mr-2 file:py-0 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                        />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            </div>
+
+        </JojoDialog>
+      )}
     </AppLayout>
   );
 }
+

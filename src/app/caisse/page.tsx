@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { JojoDialog } from "@/components/modals/JojoDialog";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/common/SearchInput";
-import { SegmentedToggle } from "@/components/common/SegmentedToggle";
 import {
   Trash2,
   Eye,
@@ -17,13 +16,14 @@ import {
   Calendar,
   RefreshCw,
 } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase";
 import {
   fetchInvoices,
   fetchDailyReports,
   uploadDailyReport,
   deleteInvoice,
-} from "@/lib/queries/caisse";
+} from "@/services/caisse/caisseService";
 import type { SupplierInvoice, DailyReport, BusinessUnit } from "@/lib/database.types";
 
 export default function CaissePage() {
@@ -40,6 +40,7 @@ export default function CaissePage() {
   const [viewTarget, setViewTarget] = useState<SupplierInvoice | null>(null);
 
   const supabase = createClient();
+  const toast = useToast();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -80,9 +81,10 @@ export default function CaissePage() {
     try {
       const report = await uploadDailyReport(supabase, file, mode);
       setReports((prev) => [report, ...prev]);
+      toast.success("Report uploaded successfully");
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Failed to upload. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to upload. Please try again.");
     } finally {
       setUploading(false);
       // Reset input
@@ -97,9 +99,10 @@ export default function CaissePage() {
       await deleteInvoice(supabase, deleteTarget.id);
       setInvoices((prev) => prev.filter((i) => i.id !== deleteTarget.id));
       setDeleteTarget(null);
+      toast.success("Invoice deleted");
     } catch (err) {
       console.error("Delete error:", err);
-      alert("Failed to delete. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to delete. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -114,9 +117,9 @@ export default function CaissePage() {
   };
 
   const statusColor = (status: string) => {
-    if (status === "verified") return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-    if (status === "synced") return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+    if (status === "verified") return "bg-green-100 text-green-700";
+    if (status === "synced") return "bg-blue-100 text-blue-700";
+    return "bg-amber-100 text-amber-700";
   };
 
   return (
@@ -124,10 +127,7 @@ export default function CaissePage() {
       <div className="flex flex-col gap-6">
         {/* Header */}
         <div className="flex justify-between items-center">
-          <div>
-            <h1 className="font-display text-4xl font-bold text-slate-900 dark:text-white">Caisse & Invoicing</h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">Upload daily reports and manage supplier invoices.</p>
-          </div>
+          <h1 className="font-display text-4xl font-bold text-slate-900">Financials</h1>
           <Button
             className="bg-primary hover:bg-primary-dark text-white shadow-lg transition-transform hover:scale-105"
             onClick={() => loadData()}
@@ -139,24 +139,38 @@ export default function CaissePage() {
 
         {/* Business Unit Toggle */}
         <div className="flex items-center gap-4">
-          <SegmentedToggle
-            options={[
-              { value: "restaurant", label: "Restaurant" },
-              { value: "coffee", label: "Coffee Shop" },
-            ]}
-            value={mode}
-            onChange={(v) => setMode(v === "coffee" ? "coffee" : "restaurant")}
-          />
+          <div className="flex p-1 bg-slate-200 rounded-lg">
+            <button
+              onClick={() => setMode("restaurant")}
+              className={`px-6 py-2 rounded-md font-semibold transition-all ${
+                mode === "restaurant"
+                  ? "bg-white text-primary shadow"
+                  : "text-slate-600"
+              }`}
+            >
+              Restaurant
+            </button>
+            <button
+              onClick={() => setMode("coffee")}
+              className={`px-6 py-2 rounded-md font-semibold transition-all ${
+                mode === "coffee"
+                  ? "bg-white text-primary shadow"
+                  : "text-slate-600"
+              }`}
+            >
+              Coffee
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column: Upload + Daily Reports */}
           <div className="lg:col-span-1 flex flex-col gap-6">
             {/* Upload Area */}
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-              <h3 className="font-display text-lg font-bold text-slate-900 dark:text-white mb-4">Upload Daily Report</h3>
+            <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-sm">
+              <h3 className="font-display text-lg font-bold text-slate-900 mb-4">Upload Daily Report</h3>
               <div
-                className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all"
+                className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input
@@ -174,7 +188,7 @@ export default function CaissePage() {
                 ) : (
                   <>
                     <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    <p className="text-sm font-medium text-slate-600 mb-1">
                       Click to upload a daily report
                     </p>
                     <p className="text-xs text-slate-400">Support: PDF, XLSX — max 10 MB</p>
@@ -184,8 +198,8 @@ export default function CaissePage() {
             </div>
 
             {/* Daily Reports List */}
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-              <h3 className="font-display text-lg font-bold text-slate-900 dark:text-white mb-4">Recent Reports</h3>
+            <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-sm">
+              <h3 className="font-display text-lg font-bold text-slate-900 mb-4">Recent Reports</h3>
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -195,14 +209,14 @@ export default function CaissePage() {
               ) : (
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                   {reports.map((report) => (
-                    <div key={report.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    <div key={report.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
                       {report.file_type === "xlsx" ? (
                         <FileSpreadsheet className="h-8 w-8 text-green-600 flex-shrink-0" />
                       ) : (
                         <FileText className="h-8 w-8 text-red-500 flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{report.file_name}</p>
+                        <p className="text-sm font-medium text-slate-800 truncate">{report.file_name}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <Calendar className="h-3 w-3 text-slate-400" />
                           <span className="text-xs text-slate-500">{formatDate(report.report_date)}</span>
@@ -231,9 +245,9 @@ export default function CaissePage() {
 
           {/* Right Column: Invoices Table */}
           <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <h3 className="font-display text-lg font-bold text-slate-900 dark:text-white">Supplier Invoices</h3>
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="font-display text-lg font-bold text-slate-900">Supplier Invoices</h3>
                 <SearchInput placeholder="Search invoices..." value={search} onChange={setSearch} />
               </div>
 
@@ -250,7 +264,7 @@ export default function CaissePage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50 dark:bg-slate-700/50 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                    <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500 border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-4">Supplier</th>
                         <th className="px-6 py-4">Invoice #</th>
@@ -259,20 +273,20 @@ export default function CaissePage() {
                         <th className="px-6 py-4 text-center">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    <tbody className="divide-y divide-slate-200">
                       {filteredInvoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
                             <div>
-                              <p className="font-semibold text-slate-800 dark:text-white">{inv.supplier_name}</p>
+                              <p className="font-semibold text-slate-800">{inv.supplier_name}</p>
                               <p className="text-xs text-slate-500">{inv.supplier_phone}</p>
                             </div>
                           </td>
-                          <td className="px-6 py-4 font-mono text-sm text-slate-600 dark:text-slate-300">{inv.invoice_number}</td>
-                          <td className="px-6 py-4 font-chart tabular-nums font-semibold text-slate-800 dark:text-white">
+                          <td className="px-6 py-4 font-mono text-sm text-slate-600">{inv.invoice_number}</td>
+                          <td className="px-6 py-4 font-chart tabular-nums font-semibold text-slate-800">
                             {inv.currency} {Number(inv.amount).toFixed(2)}
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{formatDate(inv.date_received)}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{formatDate(inv.date_received)}</td>
                           <td className="px-6 py-4 text-center">
                             <div className="flex justify-center gap-2">
                               {inv.file_url && (

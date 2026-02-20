@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { Plus } from "lucide-react";
+
 import { SearchInput } from "@/components/common/SearchInput";
 import { EmptyState } from "@/components/common/EmptyState";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+
+import { cn } from "@/lib/utils";
 import type { MenuItem, PosDeal } from "@/lib/database.types";
 
 export type CatalogTab = "menu" | "deals";
@@ -41,14 +42,14 @@ function formatMoney(value: number): string {
   return `${value.toFixed(3)} TND`;
 }
 
-function categoryFromMenuItem(item: MenuItem): string {
+function categoryFromMenuItem(item: MenuItem): string | null {
   if (item.category && item.category.trim()) {
     return item.category.trim();
   }
   if (item.menu_categories?.name) {
     return item.menu_categories.name;
   }
-  return "Uncategorized";
+  return null;
 }
 
 export function ProductCatalog({
@@ -64,8 +65,10 @@ export function ProductCatalog({
   onAddDeal,
 }: ProductCatalogProps) {
   const categories = useMemo(() => {
-    const values = menuItems.map(categoryFromMenuItem);
-    return ["All", ...Array.from(new Set(values))];
+    const values = menuItems
+      .map(categoryFromMenuItem)
+      .filter((c): c is string => c !== null);
+    return ["All", ...Array.from(new Set(values))].sort();
   }, [menuItems]);
 
   const filteredMenuItems = useMemo(() => {
@@ -96,30 +99,53 @@ export function ProductCatalog({
   }, [deals, search]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-bold text-slate-900 dark:text-white">Catalog</h2>
+        <h2 className="font-display text-xl font-bold text-slate-900">Catalog</h2>
         <SearchInput placeholder="Search products..." value={search} onChange={onSearchChange} />
       </div>
 
-      <Tabs value={tab} onValueChange={(next) => onTabChange(next === "deals" ? "deals" : "menu")}>
-        <TabsList className="bg-slate-100 p-1 dark:bg-slate-700/60">
-          <TabsTrigger value="menu">Menu Items</TabsTrigger>
-          <TabsTrigger value="deals">Deals</TabsTrigger>
-        </TabsList>
+      <div className="mb-6 flex items-center">
+        <div className="flex p-1 bg-slate-200 rounded-lg">
+          <button
+             type="button"
+            onClick={() => onTabChange("menu")}
+            className={`px-6 py-2 rounded-md font-semibold transition-all ${
+              tab === "menu"
+                ? "bg-white text-primary shadow"
+                : "text-slate-600"
+            }`}
+          >
+            Menu Items
+          </button>
+          <button
+             type="button"
+            onClick={() => onTabChange("deals")}
+            className={`px-6 py-2 rounded-md font-semibold transition-all ${
+              tab === "deals"
+                ? "bg-white text-primary shadow"
+                : "text-slate-600"
+            }`}
+          >
+            Deals
+          </button>
+        </div>
+      </div>
 
-        <TabsContent value="menu" className="space-y-4 pt-3">
+      {tab === "menu" && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-300">
           <div className="flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
                 key={category}
                 type="button"
                 onClick={() => onCategoryChange(category)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
                   selectedCategory === category
                     ? "border-jojo-green bg-jojo-green text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-700/40 dark:text-slate-200"
-                }`}
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                )}
               >
                 {category}
               </button>
@@ -132,76 +158,92 @@ export function ProductCatalog({
               description="No available menu items match your search or category filter."
             />
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {filteredMenuItems.map((item) => (
-                <article
+                <button
                   key={item.id}
-                  className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
+                  type="button"
+                  onClick={() => onAddMenuItem(item)}
+                  className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
                 >
-                  <div className="relative h-32 bg-slate-100 dark:bg-slate-700">
+                  <div className="relative h-28 w-full overflow-hidden bg-slate-100">
                     {item.image_url ? (
                       <img
                         src={item.image_url}
                         alt={item.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                       />
-                    ) : null}
-                    <div className="absolute inset-0 bg-black/35" />
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                      <p className="line-clamp-1 text-sm font-semibold text-white">{item.name}</p>
-                      <p className="text-xs font-bold text-white">{formatMoney(getMenuPrice(item))}</p>
-                    </div>
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-300">
+                        <span className="text-3xl">🍽️</span>
+                      </div>
+                    )}
+
+                    {!item.available && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                        <span className="rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+                          Unavailable
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div className="p-3">
-                    <p className="line-clamp-2 text-xs text-slate-600 dark:text-slate-300">{item.description}</p>
-                    <Button className="mt-3 w-full" size="sm" onClick={() => onAddMenuItem(item)}>
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add
-                    </Button>
+
+                  <div className="flex flex-1 flex-col p-3">
+                    <h3 className="line-clamp-2 text-sm font-bold text-slate-900 leading-tight">
+                      {item.name}
+                    </h3>
+                    <p className="mt-auto pt-2 text-sm font-bold text-primary">
+                      {formatMoney(getMenuPrice(item))}
+                    </p>
                   </div>
-                </article>
+                </button>
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="deals" className="space-y-4 pt-3">
+      {tab === "deals" && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-300">
           {filteredDeals.length === 0 ? (
             <EmptyState title="No deals" description="No active deals match your search." />
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {filteredDeals.map((deal) => (
-                <article
+                <button
                   key={deal.id}
-                  className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
+                  type="button"
+                  onClick={() => onAddDeal(deal)}
+                  className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
                 >
-                  <div className="relative h-32 bg-slate-100 dark:bg-slate-700">
+                  <div className="relative h-28 w-full overflow-hidden bg-slate-100">
                     {deal.image_url ? (
                       <img
                         src={deal.image_url}
                         alt={deal.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                       />
-                    ) : null}
-                    <div className="absolute inset-0 bg-black/35" />
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                      <p className="line-clamp-1 text-sm font-semibold text-white">{deal.name}</p>
-                      <p className="text-xs font-bold text-white">{formatMoney(getDealPrice(deal))}</p>
-                    </div>
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-300">
+                        <span className="text-3xl">🏷️</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="p-3">
-                    <p className="line-clamp-2 text-xs text-slate-600 dark:text-slate-300">{deal.description}</p>
-                    <Button className="mt-3 w-full" size="sm" onClick={() => onAddDeal(deal)}>
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add
-                    </Button>
+
+                  <div className="flex flex-1 flex-col p-3">
+                    <h3 className="line-clamp-2 text-sm font-bold text-slate-900 leading-tight">
+                      {deal.name}
+                    </h3>
+                    <p className="mt-auto pt-2 text-sm font-bold text-primary">
+                      {formatMoney(getDealPrice(deal))}
+                    </p>
                   </div>
-                </article>
+                </button>
               ))}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
+        </div>
+      )}
+      </div>
+    );
+  }

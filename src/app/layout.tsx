@@ -37,6 +37,8 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
+import { Providers } from "./providers";
+
 export const metadata: Metadata = {
   title: "La Storia di JOJO – Admin",
   description: "Back-office to manage revenue, stock, menu, deals and caisse.",
@@ -46,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${playfair.variable} ${inter.variable} ${merriweather.variable} ${roboto.variable} ${montserrat.variable}`}>
       <body className="bg-jojo-bg text-jojo-text font-sans antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

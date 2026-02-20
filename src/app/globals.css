@@ -46,14 +46,6 @@
   --foreground: #2c2a29;
 }
 
-/* Dark mode override */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #2c2a29;
-    --foreground: #fdf8f0;
-  }
-}
-
 body {
   background-color: var(--background);
   color: var(--foreground);
@@ -65,4 +57,21 @@ body {
 /* Ensure font-display works */
 .font-display {
   font-family: var(--font-display);
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
 }

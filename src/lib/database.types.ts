@@ -81,7 +81,7 @@ export interface Deal {
   price_tnd?: number | null;
   image_url: string | null;
   active: boolean;
-  business_unit: BusinessUnit;
+  business_unit?: BusinessUnit | null;
   created_at: string;
   updated_at: string;
   // Joined
@@ -92,7 +92,7 @@ export interface DealItem {
   id: string;
   deal_id: string;
   menu_item_id: string;
-  business_unit: BusinessUnit;
+  business_unit?: BusinessUnit | null;
   // Joined
   menu_items?: MenuItem;
 }
@@ -228,6 +228,19 @@ export interface CartItem {
   unit_price_snapshot: number;
   qty: number;
   line_total_tnd: number;
+}
+
+export interface StockAudit {
+  id: string;
+  business_unit: BusinessUnit;
+  ingredient_id: string | null;
+  ingredient_name: string;
+  action_type: "RESTOCK" | "ADJUST" | "CONSUME" | "CREATE" | "UPDATE" | "DELETE";
+  qty_change: number;
+  qty_after: number;
+  supplier_info: Record<string, unknown> | null;
+  user_id: string | null;
+  created_at: string;
 }
 
 /* ---- RPC return types ---- */
