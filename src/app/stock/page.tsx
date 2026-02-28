@@ -21,20 +21,21 @@ import {
   updateIngredient,
   deleteIngredient,
   restockIngredient,
-  fetchStockAudits,
+  fetchMovements,
+  undoMovement,
 } from "@/services/stock/stockService";
 import { uploadInvoiceFile, createInvoice } from "@/services/caisse/caisseService";
 import { formatQuantity } from "@/lib/utils";
-import type { IngredientWithStatus, BusinessUnit, StockStatus, StockAudit } from "@/lib/database.types";
+import type {
+  IngredientWithStatus,
+  BusinessUnit,
+  StockStatus,
+  InventoryMovement,
+} from "@/lib/database.types";
 
 const IngredientSchema = Yup.object({
   name: Yup.string().trim().required("Ingredient name is required"),
-  quantity: Yup.number().min(0, "Quantity cannot be negative").optional(),
   unit: Yup.string().trim().required("Unit is required (e.g. kg, L, pcs)"),
-  price_per_unit: Yup.number()
-    .typeError("Price must be a number")
-    .min(1, "Price must be at least 1")
-    .required("Price per unit is required"),
   min_quantity: Yup.number()
     .typeError("Seuil must be a number")
     .min(0, "Seuil cannot be negative")
@@ -44,9 +45,7 @@ const IngredientSchema = Yup.object({
 
 type IngredientFormValues = {
   name: string;
-  quantity: number;
   unit: string;
-  price_per_unit: number;
   min_quantity: number;
   supplier_phone: string;
 };
@@ -77,9 +76,10 @@ export default function StockPage() {
   const [filter, setFilter] = useState<"all" | "in_stock" | "low_stock" | "out_of_stock">("all");
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<IngredientWithStatus[]>([]);
-  const [audits, setAudits] = useState<StockAudit[]>([]);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [undoing, setUndoing] = useState<string | null>(null);
 
   const toast = useToast();
 
@@ -98,12 +98,12 @@ export default function StockPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemsData, auditsData] = await Promise.all([
+      const [itemsData, movementsData] = await Promise.all([
         fetchIngredients(supabase, mode),
-        fetchStockAudits(supabase, mode),
+        fetchMovements(supabase, mode),
       ]);
       setItems(itemsData);
-      setAudits(auditsData);
+      setMovements(movementsData);
     } catch (err) {
       console.error("Stock fetch error:", err);
     } finally {
@@ -175,7 +175,7 @@ export default function StockPage() {
         
         const invoice = await createInvoice(supabase, {
            supplier_name: supplierName,
-           supplier_phone: editingItem.supplier_phone, // Inherit from item logic
+           supplier_phone: editingItem.supplier_phone,
            invoice_number: invoiceNumber,
            amount: invoiceAmount,
            currency: "TND",
@@ -186,23 +186,17 @@ export default function StockPage() {
         invoiceId = invoice.id;
       }
 
-      const updated = await restockIngredient(
+      // Call the RPC-based restock
+      await restockIngredient(
         supabase, 
         editingItem.id, 
         restockQty,
-        // Pass info for audit log even if no invoice record created, if name provided
-        supplierName ? {
-          name: supplierName,
-          invoice_number: invoiceNumber,
-          invoice_id: invoiceId
-        } : undefined
+        invoiceAmount,
+        invoiceId
       );
 
-      setItems((prev) =>
-        prev.map((i) => (i.id === editingItem.id ? updated : i))
-      );
-      // Refresh audits to show new action immediately
-      fetchStockAudits(supabase, mode).then(setAudits);
+      // Reload data to get fresh state from DB
+      await loadData();
       
       closeDialog();
       toast.success(`Added ${restockQty} ${editingItem.unit} to ${editingItem.name}`);
@@ -214,11 +208,33 @@ export default function StockPage() {
     }
   };
 
+  const handleUndo = async (movementId: string) => {
+    setUndoing(movementId);
+    try {
+      await undoMovement(supabase, movementId);
+      await loadData();
+      toast.success("Movement reversed successfully");
+    } catch (err) {
+      console.error("Undo error:", err);
+      const message = err instanceof Error ? err.message : "Failed to undo movement.";
+      // Make RPC error messages more user-friendly
+      if (message.includes("subsequent movements exist")) {
+        toast.error("Cannot undo: there are newer movements for this ingredient. Create an adjustment instead.");
+      } else if (message.includes("negative stock")) {
+        toast.error("Cannot undo: would result in negative stock.");
+      } else if (message.includes("already been reversed")) {
+        toast.error("This movement has already been reversed.");
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setUndoing(null);
+    }
+  };
+
   const initialValuesFromItem = (item?: IngredientWithStatus): IngredientFormValues => ({
     name: item?.name ?? "",
-    quantity: item?.quantity ?? 0,
     unit: item?.unit ?? "",
-    price_per_unit: item?.price_per_unit ?? 1,
     min_quantity: item?.min_quantity ?? 0,
     supplier_phone: item?.supplier_phone ?? "",
   });
@@ -229,17 +245,16 @@ export default function StockPage() {
       if (dialogMode === "add") {
         const newItem = await createIngredient(supabase, {
           ...values,
+          quantity: 0,
           business_unit: mode,
         });
         setItems((prev) => [...prev, newItem]);
-        fetchStockAudits(supabase, mode).then(setAudits);
         toast.success(`"${values.name}" added successfully`);
       } else if (dialogMode === "edit" && editingItem) {
         const updated = await updateIngredient(supabase, editingItem.id, values);
         setItems((prev) =>
           prev.map((i) => (i.id === editingItem.id ? updated : i))
         );
-        fetchStockAudits(supabase, mode).then(setAudits);
         toast.success(`"${values.name}" updated successfully`);
       }
       closeDialog();
@@ -257,12 +272,21 @@ export default function StockPage() {
     try {
       await deleteIngredient(supabase, editingItem.id);
       setItems((prev) => prev.filter((i) => i.id !== editingItem.id));
-      fetchStockAudits(supabase, mode).then(setAudits);
       closeDialog();
       toast.success(`"${editingItem.name}" deleted`);
     } catch (err: unknown) {
-      console.error("Delete error:", err);
-      toast.error(err instanceof Error ? err.message : "Failed to delete. Please try again.");
+      const message = err instanceof Error ? err.message : "";
+      // Graceful handling for ledger-protected ingredients
+      if (message.includes("inventory movements")) {
+        closeDialog();
+        toast.warning(
+          `"${editingItem.name}" has ledger history and cannot be deleted. ` +
+          `Set its stock to zero via a restock adjustment if it's no longer in use.`
+        );
+      } else {
+        console.error("Delete error:", err);
+        toast.error(message || "Failed to delete. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -421,14 +445,12 @@ export default function StockPage() {
                       <th className="px-6 py-4">Status</th>
                       <th className="px-6 py-4">Quantity</th>
                       <th className="px-6 py-4">Seuil</th>
-                      <th className="px-6 py-4">Price</th>
                       <th className="px-6 py-4 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {filtered.map((item) => {
                       const status = resolveStatus(item);
-                      // const seuilValue = resolveSeuil(item); // Unused
 
                       return (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
@@ -458,9 +480,6 @@ export default function StockPage() {
                             {formatQuantity(resolveSeuil(item), item.unit)} {item.unit}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-chart tabular-nums">
-                          TND {Number(item.price_per_unit).toFixed(2)}
-                        </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex justify-center gap-2">
                             <button onClick={() => openRestock(item)} className="p-2 text-slate-400 hover:text-primary transition-colors" title="Restock">
@@ -489,13 +508,17 @@ export default function StockPage() {
                  <span className="ml-2 text-slate-500">Loading history...</span>
               </div>
            ) : (
-             <StockHistory audits={audits} />
+             <StockHistory
+               movements={movements}
+               onUndo={handleUndo}
+               undoing={undoing}
+             />
            )
         )}
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Modal — metadata only, no quantity field */}
       {(dialogMode === "add" || dialogMode === "edit") && (
         <Formik
           initialValues={initialValuesFromItem(editingItem ?? undefined)}
@@ -528,22 +551,6 @@ export default function StockPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    {dialogMode === "edit" && (
-                    <div>
-                      <Label htmlFor="quantity">Quantity</Label>
-                      <Input
-                        id="quantity"
-                        name="quantity"
-                        type="number"
-                        value={values.quantity}
-                        onChange={formikChange}
-                        className="mt-1"
-                      />
-                      {touched.quantity && errors.quantity && (
-                        <p className="text-xs text-red-600 mt-1">{errors.quantity}</p>
-                      )}
-                    </div>
-                    )}
                     <div>
                       <Label htmlFor="unit">Unit (e.g. kg, L, pcs)</Label>
                       <Input
@@ -555,23 +562,6 @@ export default function StockPage() {
                       />
                       {touched.unit && errors.unit && (
                         <p className="text-xs text-red-600 mt-1">{errors.unit}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="price_per_unit">Price / Unit</Label>
-                      <Input
-                        id="price_per_unit"
-                        name="price_per_unit"
-                        type="number"
-                        value={values.price_per_unit}
-                        onChange={formikChange}
-                        className="mt-1"
-                      />
-                      {touched.price_per_unit && errors.price_per_unit && (
-                        <p className="text-xs text-red-600 mt-1">{errors.price_per_unit}</p>
                       )}
                     </div>
                     <div>
@@ -737,4 +727,3 @@ export default function StockPage() {
     </AppLayout>
   );
 }
-

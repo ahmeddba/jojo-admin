@@ -26,16 +26,16 @@ export interface Ingredient {
   quantity: number;
   unit: string;
   seuil?: number | null;
-  price_per_unit: number;
   min_quantity: number;
   supplier_phone: string;
   business_unit: BusinessUnit;
+  total_value: number;
+  average_unit_cost: number;
   created_at: string;
   updated_at: string;
 }
 
 export interface IngredientWithStatus extends Ingredient {
-  total_value: number;
   computed_status: StockStatus;
 }
 
@@ -243,6 +243,36 @@ export interface StockAudit {
   created_at: string;
 }
 
+export interface InventoryMovement {
+  id: string;
+  ingredient_id: string;
+  movement_type: "CONSUME" | "RESTOCK" | "ADJUST" | "REVERSAL" | "CREATE" | "DELETE";
+  qty_change: number;
+  amount_tnd_delta: number;
+  reason: string | null;
+  ref_order_id: string | null;
+  invoice_id: string | null;
+  reversed_movement_id: string | null;
+  is_reversed: boolean;
+  business_unit: BusinessUnit;
+  created_at: string;
+  // Joined field (optional, for display)
+  ingredient_name?: string;
+}
+
+export interface RestockResult {
+  movement_id: string;
+  new_quantity: number;
+  new_total_value: number;
+  new_average_unit_cost: number;
+}
+
+export interface UndoMovementResult {
+  reversal_movement_id: string;
+  new_quantity: number;
+  new_total_value: number;
+}
+
 /* ---- RPC return types ---- */
 
 export interface TotalRevenueResult {
@@ -270,8 +300,8 @@ export interface RevenueTrendPoint {
 
 /* ---- Insert types (omit auto-generated fields) ---- */
 
-export type IngredientInsert = Omit<Ingredient, "id" | "created_at" | "updated_at">;
-export type IngredientUpdate = Partial<IngredientInsert>;
+export type IngredientInsert = Omit<Ingredient, "id" | "created_at" | "updated_at" | "total_value" | "average_unit_cost">;
+export type IngredientUpdate = Partial<Omit<IngredientInsert, "quantity">>;
 
 export type MenuItemInsert = Omit<MenuItem, "id" | "created_at" | "updated_at" | "menu_categories">;
 export type MenuItemUpdate = Partial<MenuItemInsert>;
