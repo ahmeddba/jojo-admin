@@ -246,7 +246,7 @@ export interface StockAudit {
 export interface InventoryMovement {
   id: string;
   ingredient_id: string;
-  movement_type: "CONSUME" | "RESTOCK" | "ADJUST" | "REVERSAL" | "CREATE" | "DELETE";
+  movement_type: "CONSUME" | "RESTOCK" | "ADJUST" | "REVERSAL" | "CREATE" | "DELETE" | "UPDATE";
   qty_change: number;
   amount_tnd_delta: number;
   reason: string | null;

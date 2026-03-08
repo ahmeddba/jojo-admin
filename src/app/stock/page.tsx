@@ -276,12 +276,11 @@ export default function StockPage() {
       toast.success(`"${editingItem.name}" deleted`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
-      // Graceful handling for ledger-protected ingredients
-      if (message.includes("inventory movements")) {
-        closeDialog();
+      closeDialog();
+      if (message.includes("quantity must be 0")) {
         toast.warning(
-          `"${editingItem.name}" has ledger history and cannot be deleted. ` +
-          `Set its stock to zero via a restock adjustment if it's no longer in use.`
+          `"${editingItem.name}" still has stock. ` +
+          `Set its quantity to zero before deleting.`
         );
       } else {
         console.error("Delete error:", err);
@@ -292,7 +291,15 @@ export default function StockPage() {
     }
   };
 
-  const mapStatus = (status: StockStatus): "in-stock" | "low-stock" | "out-of-stock" => {
+  const mapStatus = (item: IngredientWithStatus): "in-stock" | "low-stock" | "out-of-stock" | "new-item" => {
+    const status = resolveStatus(item);
+    // New item: quantity is 0 and has never been restocked
+    if (status === "out_of_stock") {
+      const hasRestock = movements.some(
+        (m) => m.ingredient_id === item.id && m.movement_type === "RESTOCK"
+      );
+      if (!hasRestock) return "new-item";
+    }
     if (status === "in_stock") return "in-stock";
     if (status === "low_stock") return "low-stock";
     return "out-of-stock";
@@ -384,7 +391,7 @@ export default function StockPage() {
               {/* View Toggle */}
               <div className="flex p-1 bg-slate-200 rounded-lg">
                 <button
-                  onClick={() => setView("inventory")}
+                  onClick={() => { setView("inventory"); loadData(); }}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
                     view === "inventory"
                       ? "bg-white text-slate-900 shadow"
@@ -394,7 +401,7 @@ export default function StockPage() {
                   Inventory
                 </button>
                 <button
-                  onClick={() => setView("history")}
+                  onClick={() => { setView("history"); loadData(); }}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
                     view === "history"
                       ? "bg-white text-slate-900 shadow"
@@ -450,8 +457,6 @@ export default function StockPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {filtered.map((item) => {
-                      const status = resolveStatus(item);
-
                       return (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
@@ -468,7 +473,7 @@ export default function StockPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <StatusPill status={mapStatus(status)} />
+                          <StatusPill status={mapStatus(item)} />
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">

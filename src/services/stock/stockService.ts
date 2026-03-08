@@ -30,38 +30,33 @@ export async function fetchMovements(
   supabase: SupabaseClient,
   businessUnit: BusinessUnit
 ): Promise<InventoryMovement[]> {
-  // Query movements joined with ingredient name
-  // Filter by ingredient's business_unit (always set) rather than
-  // movement's denormalized business_unit (may be NULL for old records)
+  // Query movements with denormalized ingredient_name_snapshot
+  // No join needed — name is stored directly on each movement row
   const { data, error } = await supabase
     .from("inventory_movements")
-    .select("*, ingredients!inner(name, business_unit)")
-    .eq("ingredients.business_unit", businessUnit)
+    .select("*")
+    .eq("business_unit", businessUnit)
     .order("created_at", { ascending: false })
     .limit(200);
 
   if (error) throw error;
 
-  // Map the joined ingredient name into the flat structure
   return (data ?? []).map(
-    (row: Record<string, unknown>): InventoryMovement => {
-      const ingredients = row.ingredients as { name: string } | null;
-      return {
-        id: row.id as string,
-        ingredient_id: row.ingredient_id as string,
-        movement_type: row.movement_type as InventoryMovement["movement_type"],
-        qty_change: Number(row.qty_change),
-        amount_tnd_delta: Number(row.amount_tnd_delta),
-        reason: row.reason as string | null,
-        ref_order_id: row.ref_order_id as string | null,
-        invoice_id: row.invoice_id as string | null,
-        reversed_movement_id: row.reversed_movement_id as string | null,
-        is_reversed: row.is_reversed as boolean,
-        business_unit: row.business_unit as BusinessUnit,
-        created_at: row.created_at as string,
-        ingredient_name: ingredients?.name ?? "Unknown",
-      };
-    }
+    (row: Record<string, unknown>): InventoryMovement => ({
+      id: row.id as string,
+      ingredient_id: row.ingredient_id as string,
+      movement_type: row.movement_type as InventoryMovement["movement_type"],
+      qty_change: Number(row.qty_change),
+      amount_tnd_delta: Number(row.amount_tnd_delta),
+      reason: row.reason as string | null,
+      ref_order_id: row.ref_order_id as string | null,
+      invoice_id: row.invoice_id as string | null,
+      reversed_movement_id: row.reversed_movement_id as string | null,
+      is_reversed: row.is_reversed as boolean,
+      business_unit: row.business_unit as BusinessUnit,
+      created_at: row.created_at as string,
+      ingredient_name: (row.ingredient_name_snapshot as string) ?? "Unknown",
+    })
   );
 }
 
@@ -105,6 +100,7 @@ export async function createIngredient(
     .select("id")
     .eq("name", ingredient.name)
     .eq("business_unit", ingredient.business_unit)
+    .is("deleted_at", null)
     .limit(1);
 
   if (existing && existing.length > 0) {
@@ -131,6 +127,7 @@ export async function createIngredient(
   // Insert CREATE movement into the ledger for history visibility
   await supabase.from("inventory_movements").insert({
     ingredient_id: full.id,
+    ingredient_name_snapshot: full.name,
     movement_type: "CREATE",
     qty_change: 0,
     amount_tnd_delta: 0,
@@ -156,6 +153,13 @@ export async function updateIngredient(
   id: string,
   updates: IngredientUpdate
 ): Promise<IngredientWithStatus> {
+  // Fetch old name before update (to detect renames)
+  const { data: before } = await supabase
+    .from("ingredients")
+    .select("name, business_unit")
+    .eq("id", id)
+    .single();
+
   const { error } = await supabase
     .from("ingredients")
     .update(updates)
@@ -169,6 +173,25 @@ export async function updateIngredient(
     .eq("id", id)
     .single();
   if (viewError) throw viewError;
+
+  // Record UPDATE movement in the ledger
+  await supabase.from("inventory_movements").insert({
+    ingredient_id: full.id,
+    ingredient_name_snapshot: full.name,
+    movement_type: "UPDATE",
+    qty_change: 0,
+    amount_tnd_delta: 0,
+    reason: "Ingredient updated" + (before?.name !== full.name ? ` (renamed from "${before?.name}")` : ""),
+    business_unit: full.business_unit,
+  });
+
+  // If name changed, update the snapshot on all past movements
+  if (before && before.name !== full.name) {
+    await supabase.rpc("update_ingredient_name_snapshot", {
+      p_ingredient_id: id,
+      p_new_name: full.name,
+    });
+  }
 
   await logStockAudit(supabase, {
     business_unit: full.business_unit,
@@ -187,61 +210,40 @@ export async function deleteIngredient(
   supabase: SupabaseClient,
   id: string
 ): Promise<void> {
-  // Check if movements exist — if so, block deletion (ledger is immutable)
-  const { count: movementCount } = await supabase
-    .from("inventory_movements")
-    .select("id", { count: "exact", head: true })
-    .eq("ingredient_id", id);
-
-  if (movementCount && movementCount > 0) {
-    throw new Error(
-      "Cannot delete this ingredient: it has inventory movements in the ledger. " +
-      "Ledger entries are permanent for audit safety. " +
-      "Set the stock to zero via an adjustment if this ingredient is no longer used."
-    );
-  }
-
-  // Fetch for audit before deletion
+  // Fetch ingredient for audit log
   const { data: item } = await supabase
     .from("ingredients")
     .select("name, quantity, business_unit")
     .eq("id", id)
     .single();
 
-  if (item) {
-    await logStockAudit(supabase, {
-      business_unit: item.business_unit,
-      ingredient_id: id,
-      ingredient_name: item.name,
-      action_type: "DELETE",
-      qty_change: -Number(item.quantity),
-      qty_after: 0,
-    });
+  if (!item) {
+    throw new Error("Ingredient not found.");
   }
 
-  // 1. Delete from menu_item_ingredients (recipes)
-  const { error: recipeError } = await supabase
-    .from("menu_item_ingredients")
-    .delete()
-    .eq("ingredient_id", id);
-  if (recipeError) throw recipeError;
+  // Block deletion if quantity is not zero (also enforced by RPC)
+  if (Number(item.quantity) !== 0) {
+    throw new Error(
+      "Cannot delete this ingredient: its quantity must be 0 before deletion. " +
+      "Set the stock to zero via an adjustment first."
+    );
+  }
 
-  // 2. Delete from stock_alert_events (alerts)
-  const { error: alertError } = await supabase
-    .from("stock_alert_events")
-    .delete()
-    .eq("ingredient_id", id);
-  if (alertError) throw alertError;
+  // Audit log
+  await logStockAudit(supabase, {
+    business_unit: item.business_unit,
+    ingredient_id: id,
+    ingredient_name: item.name,
+    action_type: "DELETE",
+    qty_change: 0,
+    qty_after: 0,
+  });
 
-  // 3. Delete the ingredient itself (only possible if zero movements)
-  const { error, count } = await supabase
-    .from("ingredients")
-    .delete({ count: "exact" })
-    .eq("id", id);
+  // Soft-delete via RPC (records DELETE movement, sets deleted_at, removes recipes)
+  const { error } = await supabase.rpc("soft_delete_ingredient", {
+    p_ingredient_id: id,
+  });
   if (error) throw error;
-  if (count === 0) {
-    throw new Error("Failed to delete ingredient: not found or access denied.");
-  }
 }
 
 /* ================================================================

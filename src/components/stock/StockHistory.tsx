@@ -18,6 +18,7 @@ import {
   ShoppingCart,
   PlusCircle,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { formatQuantity } from "@/lib/utils";
 
@@ -42,6 +43,8 @@ export function StockHistory({ movements, onUndo, undoing }: StockHistoryProps) 
         return <PlusCircle className="h-4 w-4 text-blue-500" />;
       case "DELETE":
         return <Trash2 className="h-4 w-4 text-red-600" />;
+      case "UPDATE":
+        return <Pencil className="h-4 w-4 text-indigo-500" />;
       default:
         return <Package className="h-4 w-4 text-slate-400" />;
     }
@@ -61,6 +64,8 @@ export function StockHistory({ movements, onUndo, undoing }: StockHistoryProps) 
         return "Created";
       case "DELETE":
         return "Deleted";
+      case "UPDATE":
+        return "Updated";
       default:
         return type;
     }
